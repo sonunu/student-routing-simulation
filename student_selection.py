@@ -11,16 +11,19 @@ st.title("Nationwide School-Based Student Simulation Tool")
 # ======== Load Data ========
 @st.cache_data
 def load_schools_data():
-    return pd.read_csv('US_Schools_Cleaned.csv')
+    return pd.read_csv('US_Schools_Cleaned.csv')  # CSV is small — keep local
 
 @st.cache_data
 def load_city_boundaries():
-    return gpd.read_file('national_city_boundaries.geojson')
+    city_boundaries_url = 'https://drive.google.com/uc?id=1oX7Pckauwmejwg-PsrQgLPMhHEItEzer'
+    return gpd.read_file(city_boundaries_url)
 
 @st.cache_data
 def load_centroids():
-    return gpd.read_file('national_tabblock_centroids.geojson')
+    centroids_url = 'https://drive.google.com/uc?id=1nBwf1VBobBuFMJXDyFSRgeUSMAvZAqfB'
+    return gpd.read_file(centroids_url)
 
+# Load data
 schools_df = load_schools_data()
 city_boundaries = load_city_boundaries()
 tabblock_centroids = load_centroids()
