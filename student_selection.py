@@ -8,32 +8,66 @@ import requests
 st.set_page_config(page_title="Nationwide Student Simulation Tool", layout="wide")
 st.title("Nationwide Student Simulation Tool")
 
-# ======== Helper Function: Download & Load GeoJSON ========
-def download_and_load_geojson(url, filename):
-    response = requests.get(url)
-    with open(filename, 'wb') as f:
-        f.write(response.content)
+# ======== Google Drive Download Helpers ========
+
+# Download large files from Google Drive using file ID (handles confirmation tokens)
+def download_file_from_google_drive(file_id, destination):
+    URL = "https://docs.google.com/uc?export=download"
+
+    session = requests.Session()
+    response = session.get(URL, params={'id': file_id}, stream=True)
+    token = get_confirm_token(response)
+
+    if token:
+        params = {'id': file_id, 'confirm': token}
+        response = session.get(URL, params=params, stream=True)
+
+    save_response_content(response, destination)
+
+
+def get_confirm_token(response):
+    for key, value in response.cookies.items():
+        if key.startswith('download_warning'):
+            return value
+    return None
+
+
+def save_response_content(response, destination):
+    CHUNK_SIZE = 32768
+
+    with open(destination, "wb") as f:
+        for chunk in response.iter_content(CHUNK_SIZE):
+            if chunk:
+                f.write(chunk)
+
+
+def download_and_load_geojson_from_drive(file_id, filename):
+    download_file_from_google_drive(file_id, filename)
     return gpd.read_file(filename)
 
+
 # ======== Load Data ========
+
 @st.cache_data
 def load_schools_data():
-    return pd.read_csv('US_Schools_Cleaned.csv')  # CSV stays local
+    return pd.read_csv('US_Schools_Cleaned.csv')  # CSV is small — keep local
 
 @st.cache_data
 def load_city_boundaries():
-    city_boundaries_url = 'https://drive.google.com/uc?id=1oX7Pckauwmejwg-PsrQgLPMhHEItEzer'
-    return download_and_load_geojson(city_boundaries_url, 'city_boundaries.geojson')
+    file_id = '1oX7Pckauwmejwg-PsrQgLPMhHEItEzer'
+    return download_and_load_geojson_from_drive(file_id, 'city_boundaries.geojson')
 
 @st.cache_data
 def load_centroids():
-    centroids_url = 'https://drive.google.com/uc?id=1nBwf1VBobBuFMJXDyFSRgeUSMAvZAqfB'
-    return download_and_load_geojson(centroids_url, 'centroids.geojson')
+    file_id = '1nBwf1VBobBuFMJXDyFSRgeUSMAvZAqfB'
+    return download_and_load_geojson_from_drive(file_id, 'centroids.geojson')
 
-# Load datasets
+
+# ======== Load Datasets ========
 schools_df = load_schools_data()
 city_boundaries = load_city_boundaries()
 tabblock_centroids = load_centroids()
+
 
 
 
