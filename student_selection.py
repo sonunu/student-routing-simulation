@@ -3,30 +3,38 @@ import pandas as pd
 import geopandas as gpd
 import random
 from shapely.geometry import Point
+import requests
 
 st.set_page_config(page_title="Nationwide Student Simulation Tool", layout="wide")
-st.title("Nationwide School-Based Student Simulation Tool")
+st.title("Nationwide Student Simulation Tool")
 
+# ======== Helper Function: Download & Load GeoJSON ========
+def download_and_load_geojson(url, filename):
+    response = requests.get(url)
+    with open(filename, 'wb') as f:
+        f.write(response.content)
+    return gpd.read_file(filename)
 
 # ======== Load Data ========
 @st.cache_data
 def load_schools_data():
-    return pd.read_csv('US_Schools_Cleaned.csv')  # CSV is small — keep local
+    return pd.read_csv('US_Schools_Cleaned.csv')  # CSV stays local
 
 @st.cache_data
 def load_city_boundaries():
     city_boundaries_url = 'https://drive.google.com/uc?id=1oX7Pckauwmejwg-PsrQgLPMhHEItEzer'
-    return gpd.read_file(city_boundaries_url)
+    return download_and_load_geojson(city_boundaries_url, 'city_boundaries.geojson')
 
 @st.cache_data
 def load_centroids():
     centroids_url = 'https://drive.google.com/uc?id=1nBwf1VBobBuFMJXDyFSRgeUSMAvZAqfB'
-    return gpd.read_file(centroids_url)
+    return download_and_load_geojson(centroids_url, 'centroids.geojson')
 
-# Load data
+# Load datasets
 schools_df = load_schools_data()
 city_boundaries = load_city_boundaries()
 tabblock_centroids = load_centroids()
+
 
 
 # ======== School Selection ========
