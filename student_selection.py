@@ -17,11 +17,11 @@ def load_schools_data():
 # ======== Load City Boundaries and Centroids from S3 URLs ========
 @st.cache_data
 def load_city_boundaries():
-    return gpd.read_file('https://your-bucket-name.s3.amazonaws.com/city_boundaries.geojson')
+    return gpd.read_file('https://streamlit-files-for-student-simulation.s3.us-east-2.amazonaws.com/national_city_boundaries.geojson')
 
 @st.cache_data
 def load_centroids():
-    return gpd.read_file('https://your-bucket-name.s3.amazonaws.com/centroids.geojson')
+    return gpd.read_file('https://streamlit-files-for-student-simulation.s3.us-east-2.amazonaws.com/national_tabblock_centroids.geojson')
 
 
 # ======== Load Datasets ========
