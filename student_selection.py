@@ -11,32 +11,23 @@ st.title("Nationwide Student Simulation Tool")
 # ======== Load Schools CSV (Local File) ========
 @st.cache_data
 def load_schools_data():
-    return pd.read_csv('US_Schools_Cleaned.csv')
+    return pd.read_csv('US_Schools_Cleaned.csv')  # Keep this local
 
 
-# ======== File Uploads for Large Files ========
+# ======== Load City Boundaries and Centroids from S3 URLs ========
+@st.cache_data
+def load_city_boundaries():
+    return gpd.read_file('https://your-bucket-name.s3.amazonaws.com/city_boundaries.geojson')
 
-st.header("🔼 Upload City Boundaries GeoJSON")
-uploaded_city = st.file_uploader("Upload city boundaries file (.geojson)", type="geojson")
-if uploaded_city:
-    city_boundaries = gpd.read_file(uploaded_city)
-    st.success("City boundaries loaded successfully.")
-else:
-    st.stop()  # Stop app until city boundaries are uploaded
-
-
-st.header("🔼 Upload Tabblock Centroids GeoJSON")
-uploaded_centroids = st.file_uploader("Upload tabblock centroids file (.geojson)", type="geojson")
-if uploaded_centroids:
-    tabblock_centroids = gpd.read_file(uploaded_centroids)
-    st.success("Centroids loaded successfully.")
-else:
-    st.stop()  # Stop app until centroids are uploaded
+@st.cache_data
+def load_centroids():
+    return gpd.read_file('https://your-bucket-name.s3.amazonaws.com/centroids.geojson')
 
 
-# ======== Load Schools Dataset ========
+# ======== Load Datasets ========
 schools_df = load_schools_data()
-
+city_boundaries = load_city_boundaries()
+tabblock_centroids = load_centroids()
 
 # ======== School Selection ========
 st.header("1️⃣ Select a School")
