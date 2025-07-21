@@ -11,44 +11,51 @@ from sklearn.cluster import KMeans, DBSCAN
 import matplotlib.pyplot as plt
 import zipfile
 
-# Streamlit setup
-st.set_page_config(page_title="Troy Bus Stops Generator", layout="wide")
-st.title("🚍 Troy Bus Stops and Routing Generator (Athens High School)")
+st.set_page_config(page_title="Bus Stops Generator", layout="wide")
+st.title("🚍 Bus Stops and Routing from Athens High School, Troy")
 
-# === File Upload ===
+# Upload Files
 student_file = st.file_uploader("Upload Student Points (GeoJSON):", type=["geojson"])
 city_zip_file = st.file_uploader("Upload Troy City Boundaries ZIP File:", type=["zip"])
 
 if student_file and city_zip_file:
-    # Load Troy boundaries from ZIP
+
+    # Load Troy boundaries
     with zipfile.ZipFile(city_zip_file, 'r') as zip_ref:
         zip_ref.extractall("troy_boundary")
     gdf_cities = gpd.read_file("troy_boundary/tl_2019_26_place.shp")
 
     gdf_students = gpd.read_file(student_file).to_crs(epsg=4326)
 
-    # Hardcoded Athens High School coordinates
+    # Hardcoded school coordinates
     school_lat, school_lon = 42.5841, -83.1250
 
-    # Filter to Troy city
+    # Filter to Troy
     troy_geom = gdf_cities[gdf_cities["NAME"] == "Troy"].unary_union
     gdf_students = gdf_students[gdf_students.within(troy_geom)].reset_index(drop=True)
 
-    num_students = st.slider("Number of Students to Use:", min_value=10, max_value=len(gdf_students), value=min(80, len(gdf_students)))
-    num_buses = st.number_input("Number of Buses:", min_value=1, max_value=20, value=2, step=1)
-    max_capacity = st.number_input("Max Students Per Bus:", min_value=10, max_value=100, value=40, step=5)
+    num_students = st.slider("Number of Students:", min_value=10, max_value=len(gdf_students), value=min(80, len(gdf_students)))
+    num_buses = st.number_input("Number of Buses:", min_value=1, max_value=20, value=2)
+    max_capacity = st.number_input("Max Students per Bus:", min_value=10, max_value=100, value=40)
 
     gdf_students = gdf_students.sample(n=num_students, random_state=42).reset_index(drop=True)
 
-    if st.button("🚏 Generate Bus Stops and Routes"):
-        G = ox.graph_from_point((school_lat, school_lon), dist=10000, network_type="drive")
+    if st.button("Generate Bus Stops and Routes"):
+
+        # Load network and school node
+        G = ox.graph_from_place("Troy, Michigan, USA", network_type="drive")
         school_point = ox.distance.nearest_nodes(G, school_lon, school_lat)
+
+        # KMeans Clustering
         coords = np.column_stack((gdf_students.geometry.y.values, gdf_students.geometry.x.values))
         kmeans = KMeans(n_clusters=num_buses, random_state=42).fit(coords)
         gdf_students["bus_cluster"] = kmeans.labels_
 
+        # Capacity Balancing Functions (same as original)
         def compute_group_centroids(gdf):
-            return {cid: (gdf[gdf["bus_cluster"] == cid].geometry.y.mean(), gdf[gdf["bus_cluster"] == cid].geometry.x.mean()) for cid in gdf["bus_cluster"].unique()}
+            return {cid: (gdf[gdf["bus_cluster"] == cid].geometry.y.mean(),
+                          gdf[gdf["bus_cluster"] == cid].geometry.x.mean())
+                    for cid in gdf["bus_cluster"].unique()}
 
         def compute_distance(p1, p2):
             return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
@@ -88,7 +95,8 @@ if student_file and city_zip_file:
                 for cid, student_indices in overloaded_clusters.items():
                     while len(student_indices) > max_size:
                         own_centroid = centroids[cid]
-                        distances = [(compute_distance((gdf.geometry.y[idx], gdf.geometry.x[idx]), own_centroid), idx) for idx in student_indices]
+                        distances = [(compute_distance((gdf.geometry.y[idx], gdf.geometry.x[idx]), own_centroid), idx)
+                                     for idx in student_indices]
                         distances.sort(reverse=True)
                         _, student_to_move = distances[0]
                         student_point = (gdf.geometry.y[student_to_move], gdf.geometry.x[student_to_move])
@@ -107,6 +115,7 @@ if student_file and city_zip_file:
                         else:
                             break
 
+        # Capacity Enforcement
         while True:
             cluster_indices = get_cluster_indices(gdf_students)
             centroids = compute_group_centroids(gdf_students)
@@ -117,8 +126,8 @@ if student_file and city_zip_file:
 
         strictly_enforce_capacity(gdf_students, max_capacity)
 
-        distance_threshold_m = 800
-        eps_deg = distance_threshold_m / 111320
+        # DBSCAN Stop Grouping
+        eps_deg = 800 / 111320
         bus_stops = []
         for cluster_id in sorted(gdf_students["bus_cluster"].unique()):
             group = gdf_students[gdf_students["bus_cluster"] == cluster_id]
@@ -135,46 +144,46 @@ if student_file and city_zip_file:
                     nearest_node = ox.distance.nearest_nodes(G, centroid.x, centroid.y)
                     x, y = G.nodes[nearest_node]['x'], G.nodes[nearest_node]['y']
                     bus_stops.append({"bus_id": cluster_id, "geometry": Point(x, y)})
+
+        # Final GeoDataFrame
         gdf_stops = gpd.GeoDataFrame(bus_stops, crs=gdf_students.crs)
         gdf_stops["bus_id"] = gdf_stops["bus_id"].astype(int)
         gdf_stops["osmid"] = gdf_stops.geometry.apply(lambda pt: ox.distance.nearest_nodes(G, pt.x, pt.y))
-        gdf_stops["cluster"] = gdf_stops["bus_id"].astype(int)
+
+        # TSP Routing
         bus_routes = {}
-        for cluster_id in sorted(gdf_stops["cluster"].unique()):
-            cluster_df = gdf_stops[gdf_stops["cluster"] == cluster_id]
+        for cluster_id in sorted(gdf_stops["bus_id"].unique()):
+            cluster_df = gdf_stops[gdf_stops["bus_id"] == cluster_id]
             stop_nodes = list(cluster_df["osmid"])
             all_nodes = [school_point] + stop_nodes
             tsp_graph = nx.complete_graph(len(all_nodes))
             for i in tsp_graph.nodes:
                 for j in tsp_graph.nodes:
                     if i != j:
-                        origin, destination = all_nodes[i], all_nodes[j]
                         try:
-                            length = nx.shortest_path_length(G, origin, destination, weight='length')
-                            tsp_graph[i][j]['weight'] = length
+                            tsp_graph[i][j]['weight'] = nx.shortest_path_length(G, all_nodes[i], all_nodes[j], weight='length')
                         except:
                             tsp_graph[i][j]['weight'] = float('inf')
             tsp_cycle = nx.approximation.traveling_salesman_problem(tsp_graph, cycle=True)
             ordered_osmids = [all_nodes[i] for i in tsp_cycle]
             bus_routes[cluster_id] = ordered_osmids
 
-        cmap = plt.colormaps.get_cmap('tab10')
-        colors = [cmap(i) for i in range(len(bus_routes))]
+        # Plot
         fig, ax = ox.plot_graph(G, show=False, close=False, bgcolor='white', node_size=0)
+        cmap = plt.cm.get_cmap('tab10')
         for i, (cluster_id, route_nodes) in enumerate(bus_routes.items()):
             full_path = []
             for u, v in zip(route_nodes[:-1], route_nodes[1:]):
                 try:
                     segment = nx.shortest_path(G, u, v, weight='length')
-                    full_path += segment[:-1]
+                    full_path.extend(segment[:-1])
                 except:
                     continue
             full_path.append(route_nodes[-1])
-            ox.plot_graph_route(G, full_path, route_linewidth=2, route_color=colors[i], node_size=0, ax=ax, show=False, close=False)
-        for _, row in gdf_stops.iterrows():
-            x, y = row.geometry.x, row.geometry.y
-            color = colors[row["cluster"]]
-            ax.plot(x, y, marker='o', color=color, markersize=4)
+            ox.plot_graph_route(G, full_path, route_linewidth=2, route_color=cmap(i), ax=ax, show=False, close=False)
+        for idx, row in gdf_stops.iterrows():
+            ax.scatter(row.geometry.x, row.geometry.y, c=[cmap(row.bus_id)], edgecolors='black', s=40)
         st.pyplot(fig)
+
+        # Download
         st.download_button("Download Bus Stops GeoJSON", data=gdf_stops.to_json(), file_name="bus_stops.geojson", mime="application/geo+json")
-        st.success("🚍 Capacity enforcement and routing completed for Troy.")
